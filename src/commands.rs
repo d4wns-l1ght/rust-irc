@@ -1,7 +1,11 @@
-use std::net::IpAddr;
+#[derive(Debug, PartialEq)]
+pub struct Command {
+    pub prefix: Option<String>,
+    pub kind: CommandKind,
+}
 
-
-pub enum Command {
+#[derive(Debug, PartialEq)]
+pub enum CommandKind {
     Join {
         channels: Vec<String>,
         keys: Option<Vec<String>>,
@@ -14,8 +18,8 @@ pub enum Command {
         full_name: String,
     },
     Ping {
-        source_server: IpAddr,
-        target_server: Option<IpAddr>,
+        source_server: String,
+        target_server: Option<String>,
     },
     PrivMsg {
         message_target: String,
