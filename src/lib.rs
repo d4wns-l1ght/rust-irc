@@ -1,21 +1,23 @@
 use crate::commands::*;
 use crate::state::State;
 use anyhow::{Context, Result};
-use std::io::{BufRead, BufReader};
-use std::net::{TcpListener, TcpStream};
-use std::path::Path;
-use std::sync::{Arc, RwLock};
+use std::net::TcpListener;
+use std::path::PathBuf;
+use std::sync::{
+    Arc, RwLock,
+    atomic::{AtomicBool, Ordering},
+};
 use std::thread::{self, JoinHandle};
 
 mod commands;
+mod server;
 mod state;
 
-pub fn parse_env_args(_args: Vec<String>) -> Result<String> {
-    Ok("".to_owned())
-}
-
 pub fn run(path: String) -> Result<()> {
-    let state = Arc::new(RwLock::new(State::build(Path::new(&path))?));
+    let state = Arc::new(RwLock::new(State::build(PathBuf::from(&path))?));
+    let exit_flag = Arc::new(AtomicBool::new(false));
+
+    check_for_exit(&state, &exit_flag);
 
     let listener =
         TcpListener::bind("127.0.0.1:1667").context("Failed to bind the TcpListenter")?;
@@ -25,48 +27,37 @@ pub fn run(path: String) -> Result<()> {
         match stream {
             Ok(stream) => {
                 let state = Arc::clone(&state);
-                let handle = thread::spawn(move || (handle_client(state, BufReader::new(stream))));
+                let handle = thread::spawn(move || (server::handle_client(state, stream)));
                 handles.push(handle);
             }
+            // Connection failed
             Err(e) => println!("Error: {e}"),
         };
     }
 
     match state.write() {
-        Ok(mut state) => state.save_to_file(),
+        Ok(mut state) => state.save(),
         Err(_e) => todo!(),
     }
 }
 
-fn handle_client(state: Arc<RwLock<State>>, mut stream: BufReader<TcpStream>) -> Result<()> {
-    let mut buf = String::new();
-    loop {
-        buf.clear();
-
-        if let Ok(0) = stream.read_line(&mut buf) {
-            // EOF
-            return Ok(());
-        }
-        let command = match parse_command(&buf)? {
-            Command::Quit { quit_message: _ } => return Ok(()),
-            command => command,
-        };
-        let mut state = match state.write() {
-            Ok(state) => state,
-            Err(_e) => todo!(),
-        };
-        if let Err(e) = state.apply_command(command) {
-            println!("error: {e}");
-        }
-        if let Err(e) = state.save_to_file() {
-            println!("error: {e}");
-        }
-    }
+pub fn parse_env_args(_args: Vec<String>) -> Result<String> {
+    todo!()
 }
 
-fn parse_command(line: &str) -> Result<Command> {
-    Ok(Command::Join {
-        channels: Vec::new(),
-        keys: None,
-    })
+fn check_for_exit(state: &Arc<RwLock<State>>, exit_flag: &Arc<AtomicBool>) {
+    let state = Arc::clone(state);
+    let exit_flag = Arc::clone(exit_flag);
+
+    thread::spawn(move || {
+        loop {
+            if exit_flag.load(Ordering::Relaxed) {
+                break;
+            }
+        }
+        match state.write() {
+            Ok(mut state) => state.save(),
+            Err(_e) => todo!(),
+        }
+    });
 }
