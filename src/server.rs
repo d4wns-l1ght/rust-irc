@@ -78,8 +78,9 @@ fn apply_command(
         } => Some(stream),
         CommandKind::Nick { nickname: _ } => todo!(),
         CommandKind::User {
-            username: _,
-            full_name: _,
+            user_name: _,
+            mode: _,
+            real_name: _,
         } => Some(stream),
         CommandKind::Ping {
             source_server: _,
@@ -96,7 +97,7 @@ fn apply_command(
     }
 }
 
-fn quit(state: &mut State, comment: Option<String>, connection: BufWriter<TcpStream>) {
+fn quit(_state: &mut State, _comment: Option<String>, connection: BufWriter<TcpStream>) {
     let connection = connection.into_inner().unwrap();
     if let Err(_e) = connection.shutdown(Shutdown::Both) {
         todo!();

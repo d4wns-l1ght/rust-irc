@@ -14,8 +14,9 @@ pub enum CommandKind {
         nickname: String,
     },
     User {
-        username: String,
-        full_name: String,
+        user_name: String,
+        mode: u8,
+        real_name: String,
     },
     Ping {
         source_server: String,

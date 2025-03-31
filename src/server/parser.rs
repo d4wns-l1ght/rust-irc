@@ -2,7 +2,7 @@ use std::cell::LazyCell;
 use std::str::Split;
 
 use anyhow::{Context, Result, anyhow, bail};
-use regex::Regex;
+use regex::{Captures, Regex};
 use thiserror::Error;
 
 use crate::{Command, CommandKind};
@@ -17,6 +17,8 @@ pub enum ParseError {
 
 fn join_str_iter<'a>(iter: impl Iterator<Item = &'a str>) -> String {
     iter.fold(String::new(), |a, b| a + b + " ")
+        .trim_end()
+        .to_owned()
 }
 
 // [ ":" prefix SPACE ] command [ params ] crlf
@@ -53,7 +55,25 @@ pub fn regex_match(
             if r.is_match(haystack) {
                 Ok(haystack.to_owned())
             } else {
-                Err(anyhow!("Bad match: {haystack}"))
+                Err(anyhow!("Bad match: [{haystack}]"))
+            }
+        }
+        Err(e) => Err(e.clone().into()),
+    }
+}
+
+pub fn regex_capture(
+    haystack: &str,
+    regex_generation: fn() -> Result<Regex, regex::Error>,
+) -> Result<Captures<'_>> {
+    let re: LazyCell<Result<Regex, regex::Error>> = LazyCell::new(regex_generation);
+
+    match re.as_ref() {
+        Ok(r) => {
+            if let Some(caps) = r.captures(haystack) {
+                Ok(caps)
+            } else {
+                Err(anyhow!("Bad match: [{haystack}]"))
             }
         }
         Err(e) => Err(e.clone().into()),
@@ -109,21 +129,30 @@ fn parse_servername(word: &str) -> Result<String> {
 fn parse_command(mut line: Split<'_, &str>) -> Result<CommandKind> {
     let word = match line.next() {
         Some(word) => word,
-        None => bail!(ParseError::MalformedCommand(join_str_iter(line))),
+        None => bail!(ParseError::MalformedCommand(join_str_iter(&mut line))),
     }
     .to_lowercase();
 
     match word.as_str() {
         "join" => parse_join(line),
-        "nick" => todo!(),
-        "user" => todo!(),
+        "nick" => parse_nick(line),
+        "user" => parse_user(&join_str_iter(line)),
         "ping" => todo!(),
         "privmsg" => todo!(),
         "quit" => todo!(),
-        &_ => bail!(ParseError::UnrecognisedCommand(join_str_iter(line))),
+        &_ => bail!(ParseError::UnrecognisedCommand(join_str_iter(&mut line))),
     }
 }
 
+fn parse_channel(channel: &str) -> Result<String> {
+    regex_match(channel, || {
+        Regex::new(
+            r"^(#|\+|!\b[A-Z0-9]{5}\b|&)[\x01-\x07\x08-\x09\x0B-\x0C\x0E-\x1F\x21-\x2B\x2D-\x39\x3B-\xFF]+(?::[\x01-\x07\x08-\x09\x0B-\x0C\x0E-\x1F\x21-\x2B\x2D-\x39\x3B-\xFF]+)?$",
+        )
+    })
+}
+
+// Parameters: ( <channel> *( "," <channel> ) [ <key> *( "," <key> ) ] ) / "0"
 fn parse_join(mut line: Split<'_, &str>) -> Result<CommandKind> {
     let channels = match line.next() {
         Some("0") => {
@@ -137,7 +166,7 @@ fn parse_join(mut line: Split<'_, &str>) -> Result<CommandKind> {
             .map(parse_channel)
             .collect::<Result<Vec<String>>>()
             .context("Bad command: {line}")?,
-        None => bail!(ParseError::UnrecognisedCommand(join_str_iter(line))),
+        None => bail!(ParseError::UnrecognisedCommand(join_str_iter(&mut line))),
     };
 
     let keys = line
@@ -145,15 +174,52 @@ fn parse_join(mut line: Split<'_, &str>) -> Result<CommandKind> {
         .map(|keys| keys.split(",").map(|s| s.to_owned()).collect());
 
     match line.next() {
-        Some(_p) => Err(ParseError::MalformedCommand(join_str_iter(line)).into()),
+        Some(_p) => Err(ParseError::MalformedCommand(join_str_iter(&mut line)).into()),
         None => Ok(CommandKind::Join { channels, keys }),
     }
 }
 
-fn parse_channel(channel: &str) -> Result<String> {
-    regex_match(channel, || {
+// Parameters: <nickname>
+fn parse_nick(mut line: Split<'_, &str>) -> Result<CommandKind> {
+    let nickname = regex_match(
+        line.next()
+            .ok_or(ParseError::UnrecognisedCommand(join_str_iter(&mut line)))?,
+        || Regex::new(r"^(?:[A-Za-z\x5B-\x60\x7B-\x7D][\-A-Za-z0-9\x5B-\x60\x7B-\x7D]{0,8})$"),
+    )?;
+
+    match line.next() {
+        Some(_p) => Err(ParseError::MalformedCommand(join_str_iter(&mut line)).into()),
+        None => Ok(CommandKind::Nick { nickname }),
+    }
+}
+
+// Parameters: <user> <mode> <unused> <realname>
+fn parse_user(line: &str) -> Result<CommandKind> {
+    let caps = regex_capture(line, || {
         Regex::new(
-            r"^(#|\+|!\b[A-Z0-9]{5}\b|&)[\x01-\x07\x08-\x09\x0B-\x0C\x0E-\x1F\x21-\x2B\x2D-\x39\x3B-\xFF]+(?::[\x01-\x07\x08-\x09\x0B-\x0C\x0E-\x1F\x21-\x2B\x2D-\x39\x3B-\xFF]+)?$",
+            r"^(?x)
+        (?<user>[\x01-\x07\x08-\x09\x0B-\x0C\x0E-\x1F\x21-\x2B\x2D-\x39\x3B-\xFF]+)
+        \s (?<mode>[0-9])\s\*\s:
+        (?<realname>[\s\x01-\x07\x08-\x09\x0B-\x0C\x0E-\x1F\x21-\x2B\x2D-\x39\x3B-\xFF]+)$",
         )
+    })?;
+    let user_name = caps
+        .name("user")
+        .ok_or(ParseError::MalformedCommand(line.to_owned()))?
+        .as_str();
+    let mode = caps
+        .name("mode")
+        .ok_or(ParseError::MalformedCommand(line.to_owned()))?
+        .as_str()
+        .parse::<u8>()?;
+    let real_name = caps
+        .name("realname")
+        .ok_or(ParseError::MalformedCommand(line.to_owned()))?
+        .as_str();
+
+    Ok(CommandKind::User {
+        user_name: user_name.to_owned(),
+        mode,
+        real_name: real_name.to_owned(),
     })
 }
