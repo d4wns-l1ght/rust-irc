@@ -106,7 +106,83 @@ fn parse_join_too_many_params() {
 
 #[test]
 #[should_panic]
-fn parse_invalid_channel() {
+fn parse_join_invalid_channel() {
     let mut line = "JOIN foo,#bar".to_owned();
+    try_parse_from_line(&mut line).unwrap();
+}
+
+#[test]
+fn parse_nick() {
+    let mut line = "NICK Wiz".to_owned();
+    assert_eq!(
+        try_parse_from_line(&mut line).unwrap(),
+        Command {
+            prefix: None,
+            kind: CommandKind::Nick {
+                nickname: "Wiz".to_owned()
+            }
+        }
+    );
+
+    let mut line = ":WiZ!jto@tolsun.oulu.fi NICK Kilroy".to_owned();
+    assert_eq!(
+        try_parse_from_line(&mut line).unwrap(),
+        Command {
+            prefix: Some("WiZ!jto@tolsun.oulu.fi".to_owned()),
+            kind: CommandKind::Nick {
+                nickname: "Kilroy".to_owned()
+            }
+        }
+    );
+}
+
+#[test]
+#[should_panic]
+fn parse_nick_no_nick() {
+    let mut line = "NICK".to_owned();
+    try_parse_from_line(&mut line).unwrap();
+}
+
+#[test]
+#[should_panic]
+fn parse_nick_too_long() {
+    let mut line = "NICK neo-x-23-vim".to_owned();
+    try_parse_from_line(&mut line).unwrap();
+}
+
+#[test]
+#[should_panic]
+fn parse_nick_invalid_chars() {
+    let mut line = "NICK x.23".to_owned();
+    try_parse_from_line(&mut line).unwrap();
+}
+
+#[test]
+fn parse_user() {
+    let mut line = "USER guest 0 * :Amity Blight".to_owned();
+    assert_eq!(
+        try_parse_from_line(&mut line).unwrap(),
+        Command {
+            prefix: None,
+            kind: CommandKind::User {
+                user_name: "guest".to_owned(),
+                mode: 0,
+                real_name: "Amity Blight".to_owned()
+            }
+        }
+    );
+}
+
+#[test]
+#[should_panic]
+fn parse_user_bad_mode() {
+    let mut line = "USER guest 11 * :Amity Blight".to_owned();
+    try_parse_from_line(&mut line).unwrap();
+}
+
+#[test]
+#[should_panic]
+fn parse_user_no_unused() {
+    let mut line = "USER guest 0 :Amity Blight".to_owned();
     try_parse_from_line(&mut line).unwrap();
 }
