@@ -12,6 +12,7 @@ use std::thread::{self, JoinHandle};
 mod commands;
 mod server;
 mod state;
+mod errors;
 
 pub fn run(path: String) -> Result<()> {
     let state = Arc::new(RwLock::new(State::build(PathBuf::from(&path))?));
