@@ -17,7 +17,7 @@ pub fn run(path: String) -> Result<()> {
     let state = Arc::new(RwLock::new(State::build(PathBuf::from(&path))?));
     let exit_flag = Arc::new(AtomicBool::new(false));
 
-    check_for_exit(&state, &exit_flag);
+    start_exit_check_loop(&state, &exit_flag);
 
     let listener =
         TcpListener::bind("127.0.0.1:1667").context("Failed to bind the TcpListenter")?;
@@ -45,7 +45,7 @@ pub fn parse_env_args(_args: Vec<String>) -> Result<String> {
     todo!()
 }
 
-fn check_for_exit(state: &Arc<RwLock<State>>, exit_flag: &Arc<AtomicBool>) {
+fn start_exit_check_loop(state: &Arc<RwLock<State>>, exit_flag: &Arc<AtomicBool>) {
     let state = Arc::clone(state);
     let exit_flag = Arc::clone(exit_flag);
 

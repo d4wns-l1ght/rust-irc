@@ -1,6 +1,21 @@
 use crate::server::*;
 
 #[test]
+fn check_case_insensitivity() {
+    let mut line = "jOiN #foo,&bar fubar,foobar".to_owned();
+    assert_eq!(
+        try_parse_from_line(&mut line).unwrap(),
+        Command {
+            prefix: None,
+            kind: CommandKind::Join {
+                channels: vec!["#foo".to_string(), "&bar".to_string()],
+                keys: Some(vec!["fubar".to_string(), "foobar".to_string()]),
+            }
+        }
+    );
+}
+
+#[test]
 fn parse_prefix() {
     let mut line = ":ecs.vuw.ac.nz JOIN #foo,#bar fubar,foobar".to_owned();
     assert_eq!(
@@ -14,26 +29,26 @@ fn parse_prefix() {
         }
     );
 
-    let mut line = ":nvx-23!nvx@ecs.vuw.ac.nz JOIN #foo,#bar fubar,foobar".to_owned();
+    let mut line = ":nvx-23!nvx@ecs.vuw.ac.nz NICK dawn".to_owned();
     assert_eq!(
         try_parse_from_line(&mut line).unwrap(),
         Command {
             prefix: Some("nvx-23!nvx@ecs.vuw.ac.nz".to_owned()),
-            kind: CommandKind::Join {
-                channels: vec!["#foo".to_string(), "#bar".to_string()],
-                keys: Some(vec!["fubar".to_string(), "foobar".to_string()]),
+            kind: CommandKind::Nick {
+                nickname: "dawn".to_owned(),
             }
         }
     );
 
-    let mut line = ":[{|21lu}]!wilkesluna@192.523.3.21 JOIN #foo,#bar fubar,foobar".to_owned();
+    let mut line = ":[{|21lu}]!wilkesluna@192.523.3.21 USER [{|21lu}] 0 * :dawnie".to_owned();
     assert_eq!(
         try_parse_from_line(&mut line).unwrap(),
         Command {
             prefix: Some("[{|21lu}]!wilkesluna@192.523.3.21".to_owned()),
-            kind: CommandKind::Join {
-                channels: vec!["#foo".to_string(), "#bar".to_string()],
-                keys: Some(vec!["fubar".to_string(), "foobar".to_string()]),
+            kind: CommandKind::User {
+                user_name: "[{|21lu}]".to_owned(),
+                mode: 0,
+                real_name: "dawnie".to_owned()
             }
         }
     );
@@ -101,6 +116,13 @@ fn parse_join_no_params() {
 #[should_panic]
 fn parse_join_too_many_params() {
     let mut line = "JOIN #foo,#bar fubar,foobar foooobar".to_owned();
+    try_parse_from_line(&mut line).unwrap();
+}
+
+#[test]
+#[should_panic]
+fn parse_join_0_more_args() {
+    let mut line = "JOIN 0 fubar,foobar".to_owned();
     try_parse_from_line(&mut line).unwrap();
 }
 
